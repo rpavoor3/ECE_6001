@@ -312,6 +312,10 @@ int main (int argc, char *argv[])
   rlcStats->SetAttribute ("EpochDuration", TimeValue (Seconds (0.2)));
 
   Simulator::Run ();
+
+
+
+    
   Simulator::Destroy ();
   return 0;
 }
