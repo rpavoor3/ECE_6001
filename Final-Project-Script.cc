@@ -55,12 +55,13 @@ using namespace std;
 int
 main (int argc, char *argv[])
 {
-  double simTime = 2.0;
+  double simTime = 4.0;
   double distance = 1000.0;
   Time interPacketInterval = MilliSeconds (100);
   uint16_t numCenterUes = 1;
   uint16_t numEdgeUes = 1;
   uint16_t numRandomUes = 1;
+  std::string algo = "NoOp";
 
   // Command line arguments
   CommandLine cmd (__FILE__);
@@ -209,27 +210,27 @@ main (int argc, char *argv[])
   // Install LTE Devices to the nodes
   // Install the IP stack on the UEs
   // Assign IP address to UEs
-  NetDeviceContainer enbLteDevs = lteHelper->InstallEnbDevice (enbNodes);
+  NetDeviceContainer enbLteDevs;
   NetDeviceContainer centerUeLteDevs, edgeUeLteDevs, randomUeLteDevs;
   if (centerUeNodes.GetN() > 0) {
     centerUeLteDevs = lteHelper->InstallUeDevice (centerUeNodes);
     internet.Install (centerUeNodes);
-    epcHelper->AssignUeIpv4Address (NetDeviceContainer (centerUeLteDevs));
+    epcHelper->AssignUeIpv4Address (centerUeLteDevs);
   }
   if (edgeUeNodes.GetN() > 0) {
     edgeUeLteDevs = lteHelper->InstallUeDevice (edgeUeNodes);
     internet.Install (edgeUeNodes);
-    epcHelper->AssignUeIpv4Address (NetDeviceContainer (edgeUeLteDevs));
+    epcHelper->AssignUeIpv4Address (edgeUeLteDevs);
   }
   if (randomUeNodes.GetN() > 0) {
     randomUeLteDevs = lteHelper->InstallUeDevice (randomUeNodes);
     internet.Install (randomUeNodes);
-    epcHelper->AssignUeIpv4Address (NetDeviceContainer (randomUeLteDevs));
+    epcHelper->AssignUeIpv4Address (randomUeLteDevs);
 
   }
   
   // Install center applications
-  for (uint32_t i = 0; i < numCenterUes * 3; ++i) {
+  for (uint32_t i = 0; i < numCenterUes * 3; i++) {
       Ptr<Node> centerUeNode = centerUeNodes.Get (i);
 
       // Set the default gateway for the UE
@@ -238,7 +239,7 @@ main (int argc, char *argv[])
   }
 
   // Install edge applications
-  for (uint32_t i = 0; i < numEdgeUes * 3; ++i) {
+  for (uint32_t i = 0; i < numEdgeUes * 3; i++) {
       Ptr<Node> edgeUeNode = edgeUeNodes.Get (i);
 
       // Set the default gateway for the UE
@@ -247,7 +248,7 @@ main (int argc, char *argv[])
   }
 
   // Install random applications
-  for (uint32_t i = 0; i < numRandomUes * 3; ++i) {
+  for (uint32_t i = 0; i < numRandomUes * 3; i++) {
     Ptr<Node> randomUeNode = randomUeNodes.Get (i);
 
     // Set the default gateway for the UE
@@ -255,20 +256,123 @@ main (int argc, char *argv[])
     ueStaticRouting->SetDefaultRoute (epcHelper->GetUeDefaultGatewayAddress (), 1);
   }
 
+   if(algo == "NoOp")
+  {
+    lteHelper->SetFfrAlgorithmType ("ns3::LteFrNoOpAlgorithm");
+
+    
+  lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+  enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
+
+  lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+  enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
+
+  lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+  enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
+
+  //FR algorithm reconfiguration if needed
+  PointerValue tmp;
+  enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+  Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+  ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+
+  }
+  else if (algo == "Hard")
+  {
+    lteHelper->SetFfrAlgorithmType ("ns3::LteFrHardAlgorithm");
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandwidth", UintegerValue (8));
+
+    //for the fist cell**
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (0));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(0)));//for the second cell lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (8));
+    
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (8));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(1)));//for the third cell** lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (16));
+    
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (16));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(2)));
+
+      //FR algorithm reconfiguration if needed
+    PointerValue tmp;
+    enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+    Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+    ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+  }
+  else
+  {
+     lteHelper->SetFfrAlgorithmType ("ns3::LteFrStrictAlgorithm");
+            
+      //ns3::LteFrStrictAlgorithm works with Absolute Mode Uplink Power Control
+      Config::SetDefault ("ns3::LteUePowerControl::AccumulationEnabled", BooleanValue (false));
+ 
+      lteHelper->SetFfrAlgorithmAttribute ("RsrqThreshold", UintegerValue (32));
+      //lteHelper->SetFfrAlgorithmAttribute ("CenterPowerOffset",
+      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB_6));
+      //lteHelper->SetFfrAlgorithmAttribute ("EdgePowerOffset",
+      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB3));
+      //lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (0));
+      //lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (3));
+      lteHelper->SetFfrAlgorithmAttribute ("UlCommonSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (1));
+      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (2));
+
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
+
+      //node 2
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (12));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
+
+      //node 3
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (18));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
+
+      //FR algorithm reconfiguration if needed
+      PointerValue tmp;
+      enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+      Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+      ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+    }
+  cout << "b4\n";
+  Ptr<ns3::NetDevice> n1 = centerUeLteDevs.Get(0);
+  Ptr<ns3::NetDevice> n2 = enbLteDevs.Get(0);
+  if (n1 == 0)
+    cout << "null 1";
+  if (n2 == 0)
+    cout << "null 2";
+  cout << "eek";
+  lteHelper->Attach (centerUeLteDevs.Get(0), enbLteDevs.Get(0));
+  cout << "2";
   // Attach UEs to eNodeBs
   for (uint16_t i = 0; i < 3; i++) {
-    for (int j = 0; j < numCenterUes; ++j) {
+    cout << "\n";
+    for (uint16_t j = 0; j < numCenterUes; j++) {
+      cout << i * numCenterUes + j << "\n";
       lteHelper->Attach (centerUeLteDevs.Get(i * numCenterUes + j), enbLteDevs.Get(i));
     }
-    for (int j = 0; j < numEdgeUes; ++j) {
+                cout << "555" << "\n";
+
+    for (uint16_t j = 0; j < numEdgeUes; j++) {
+            cout << j << "\n";
+
       lteHelper->Attach (edgeUeLteDevs.Get(i * numEdgeUes + j), enbLteDevs.Get(i));
     }
-    for (int j = 0; j < numRandomUes; ++j) {
+    for (uint16_t j = 0; j < numRandomUes; j++) {
+            cout << j << "\n";
+
       lteHelper->Attach (randomUeLteDevs.Get(i * numRandomUes + j), enbLteDevs.Get(i));
     }
     // side effect: the default EPS bearer will be activated
   }
 
+  cout << "here\n";
   // Install and start applications on UEs and remote host
   uint16_t ulPort = 2000;
   ApplicationContainer clientApps;
@@ -280,6 +384,7 @@ main (int argc, char *argv[])
     
     //add apps for center ues
     for (int j = 0; j < numCenterUes; ++j) {
+      cout << "hi1\n";
       ++ulPort;
       PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
       serverCenterApps.Add (ulPacketSinkHelper.Install (remoteHost));
@@ -292,7 +397,7 @@ main (int argc, char *argv[])
 
     //add apps for edge ues
     for (int j = 0; j < numEdgeUes; ++j) {
-      cout << "hi\n";
+      cout << "hi2\n";
       ++ulPort;
       PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
       serverEdgeApps.Add (ulPacketSinkHelper.Install (remoteHost));
@@ -305,6 +410,7 @@ main (int argc, char *argv[])
 
     //add apps for random ues
     for (int j = 0; j < numRandomUes; ++j) {
+      cout << "hi3\n";
       ++ulPort;
       PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
       serverRandomApps.Add (ulPacketSinkHelper.Install (remoteHost));
