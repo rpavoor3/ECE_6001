@@ -49,8 +49,14 @@ main (int argc, char *argv[])
   bool disableDl = true;
   bool disableUl = false;
   bool disablePl = true;
-  bool center = true;
-  bool edge = false;
+  bool center = false;
+  bool edge = true;
+  bool random = false;
+  std::string algo = "NoOp";
+ /* Box leftBound = Box (-distance * 0.5, distance * 0.5, -distance * 0.5, distance * 0.5, 1.5, 1.5);
+  Box rightBound = Box (distance * 0.5, distance * 1.5, -distance * 0.5, distance * 0.5, 1.5, 1.5);
+  Box topBound = Box (distance * 0.28867, distance * 0.866, -distance * 1.5, -distance * 0.5, 1.5, 1.5);
+*/
 
   // Command line arguments
   CommandLine cmd (__FILE__);
@@ -62,8 +68,11 @@ main (int argc, char *argv[])
   cmd.AddValue ("disableDl", "Disable downlink data flows", disableDl);
   cmd.AddValue ("disableUl", "Disable uplink data flows", disableUl);
   cmd.AddValue ("disablePl", "Disable data flows between peer UEs", disablePl);
-  cmd.AddValue ("center", "Disable data flows between peer UEs", center);
-   cmd.AddValue ("center", "Disable data flows between peer UEs", edge);
+  cmd.AddValue ("center", "Center nodes?", center);
+   cmd.AddValue ("edge", "Edge nodes?", edge);
+   cmd.AddValue ("algo", "Algo", algo);
+   cmd.AddValue ("random", "Random?", random);
+
   cmd.Parse (argc, argv);
 
   ConfigStore inputConfig;
@@ -113,37 +122,32 @@ main (int argc, char *argv[])
   NodeContainer ueNodes;
   NodeContainer enbNodes;
   enbNodes.Create (numNodePairs);
+  if(center && edge && random) 
+  {
+    ueNodes.Create (3*numNodePairs);
+
+  }
+  else if (center && edge)
+  {
   ueNodes.Create (2*numNodePairs);
+  }
+  else if (center || edge || random)
+  {
+    ueNodes.Create (numNodePairs);
+
+  }
 
   lteHelper->SetSchedulerType ("ns3::PfFfMacScheduler");
   lteHelper->SetSchedulerAttribute ("UlCqiFilter", EnumValue (FfMacScheduler::PUSCH_UL_CQI));
   lteHelper->SetEnbDeviceAttribute ("DlBandwidth", UintegerValue (25));
   lteHelper->SetEnbDeviceAttribute ("UlBandwidth", UintegerValue (25));
 
-  lteHelper->SetFfrAlgorithmType ("ns3::LteFrStrictAlgorithm");
-  std::string frAlgorithmType = lteHelper->GetFfrAlgorithmType ();
-
-    if (frAlgorithmType == "ns3::LteFrStrictAlgorithm")
-    {
- 
-      lteHelper->SetFfrAlgorithmAttribute ("RsrqThreshold", UintegerValue (32));
-      lteHelper->SetFfrAlgorithmAttribute ("CenterPowerOffset",
-                                           UintegerValue (LteRrcSap::PdschConfigDedicated::dB_6));
-      lteHelper->SetFfrAlgorithmAttribute ("EdgePowerOffset",
-                                           UintegerValue (LteRrcSap::PdschConfigDedicated::dB3));
-      lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (0));
-      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (3));
- 
-      //ns3::LteFrStrictAlgorithm works with Absolute Mode Uplink Power Control
-      Config::SetDefault ("ns3::LteUePowerControl::AccumulationEnabled", BooleanValue (false));
- 
-    }
 
   // Install Mobility Model
   Ptr<ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator> ();
   
   enbPositionAlloc->Add (Vector (0.0, 0.0, 0.0));                       // eNB1
-  enbPositionAlloc->Add (Vector (1000,  0.0, 0.0));                 // eNB2
+  enbPositionAlloc->Add (Vector (distance,  0.0, 0.0));                 // eNB2
     enbPositionAlloc->Add (Vector (distance * 0.5, distance * 0.866, 0.0));   // eNB3
   MobilityHelper mobility;
   mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
@@ -162,7 +166,7 @@ main (int argc, char *argv[])
   if (center)
   {
       UePositionAlloc->Add (Vector (0.0, 0.0, 0.0));                       // centerUE1
-      UePositionAlloc->Add (Vector (1000,  0.0, 0.0));                 // centerUE2
+      UePositionAlloc->Add (Vector (distance,  0.0, 0.0));                 // centerUE2
       UePositionAlloc->Add (Vector (distance * 0.5, distance * 0.866, 0.0));   //centerUE3
 
   }
@@ -171,8 +175,20 @@ main (int argc, char *argv[])
   mobility.SetPositionAllocator (UePositionAlloc);
   mobility.Install(ueNodes);
 
+
+
   // Install LTE Devices to the nodes
   NetDeviceContainer enbLteDevs;// = lteHelper->InstallEnbDevice (enbNodes);
+
+
+
+
+  
+  if(algo == "NoOp")
+  {
+    lteHelper->SetFfrAlgorithmType ("ns3::LteFrNoOpAlgorithm");
+
+    
     lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
   enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
 
@@ -187,6 +203,105 @@ main (int argc, char *argv[])
   enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
   Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
   ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+
+  }
+  else if (algo == "Hard")
+  {
+    lteHelper->SetFfrAlgorithmType ("ns3::LteFrHardAlgorithm");
+    //for the fist cell**
+    lteHelper->SetFfrAlgorithmAttribute ("DlSubBandwidth", UintegerValue (8)); //from 0 to 8 RBs
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (0));
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandwidth", UintegerValue (8));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(0)));//for the second cell lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (8));
+    
+    lteHelper->SetFfrAlgorithmAttribute ("DlSubBandwidth", UintegerValue (8)); // from 8 to 16
+    //lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (8));
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (8));
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandwidth", UintegerValue (8));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(1)));//for the third cell** lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (16));
+    lteHelper->SetFfrAlgorithmAttribute ("DlSubBandwidth", UintegerValue (8)); // from 16 to 24
+    //lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (16));
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (16));
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandwidth", UintegerValue (8)); // from 16 to 24
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(2)));
+
+      //FR algorithm reconfiguration if needed
+    PointerValue tmp;
+    enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+    Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+    ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+
+  }
+  else
+  {
+     lteHelper->SetFfrAlgorithmType ("ns3::LteFrStrictAlgorithm");
+
+  }
+  std::string frAlgorithmType = lteHelper->GetFfrAlgorithmType ();
+
+    if (frAlgorithmType == "ns3::LteFrStrictAlgorithm")
+    {
+            //ns3::LteFrStrictAlgorithm works with Absolute Mode Uplink Power Control
+      Config::SetDefault ("ns3::LteUePowerControl::AccumulationEnabled", BooleanValue (false));
+ 
+      lteHelper->SetFfrAlgorithmAttribute ("RsrqThreshold", UintegerValue (32));
+      //lteHelper->SetFfrAlgorithmAttribute ("CenterPowerOffset",
+      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB_6));
+      //lteHelper->SetFfrAlgorithmAttribute ("EdgePowerOffset",
+      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB3));
+      //lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (0));
+      //lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (3));
+
+      lteHelper->SetFfrAlgorithmAttribute ("DlCommonSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("UlCommonSubBandwidth", UintegerValue (6));
+     // lteHelper->SetFfrAlgorithmAttribute ("DlEdgeSubBandOffset", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("DlEdgeSubBandwidth", UintegerValue (6));
+     // lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (6));
+    lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+      lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (1));
+      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (2));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
+
+      //node 2
+ 
+      lteHelper->SetFfrAlgorithmAttribute ("DlCommonSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("UlCommonSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("DlEdgeSubBandOffset", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("DlEdgeSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (6));
+    lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandwidth", UintegerValue (6));   
+          lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (1));
+      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (2));
+
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
+
+
+            lteHelper->SetFfrAlgorithmAttribute ("DlCommonSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("UlCommonSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("DlEdgeSubBandOffset", UintegerValue (12));
+      lteHelper->SetFfrAlgorithmAttribute ("DlEdgeSubBandwidth", UintegerValue (6));
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (12));
+    lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandwidth", UintegerValue (6)); 
+          lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (1));
+      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (2));
+
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
+
+      //FR algorithm reconfiguration if needed
+      PointerValue tmp;
+      enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+      Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+      ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+
+ 
+    }
 
 
   NetDeviceContainer ueLteDevs = lteHelper->InstallUeDevice (ueNodes);
@@ -303,7 +418,7 @@ for (uint16_t i = 0; i < pairs; i++)
     Ptr<PacketSink> sink = DynamicCast<PacketSink>(serverApps.Get(i));
 
     
-    std::cout << "Node: " << i << ": Total Bytes Received: " <<  sink->GetTotalRx() << " Goodput: " << (sink->GetTotalRx()*8) / 19 << std::endl; 
+    std::cout << "Node: " << i << ": Total Bytes Received: " <<  sink->GetTotalRx() << " Goodput: " << (sink->GetTotalRx()*8)/0.5 << std::endl; 
   }
   Simulator::Destroy ();
   return 0;
