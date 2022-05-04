@@ -15,8 +15,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Authors: Jaume Nin <jaume.nin@cttc.cat>
- *          Manuel Requena <manuel.requena@cttc.es>
+ * Authors: Colton Mack, Ruth Pavoor
  */
 
 #include "ns3/core-module.h"
@@ -26,22 +25,9 @@
 #include "ns3/mobility-module.h"
 #include "ns3/config-store-module.h"
 #include "ns3/lte-module.h"
-
-#include "ns3/core-module.h"
 #include "ns3/network-module.h"
-#include "ns3/internet-module.h"
-#include "ns3/point-to-point-module.h"
-#include "ns3/applications-module.h"
-#include "ns3/error-model.h"
-#include "ns3/tcp-header.h"
-#include "ns3/udp-header.h"
-#include "ns3/enum.h"
-#include "ns3/event-id.h"
-#include "ns3/flow-monitor-helper.h"
 #include "ns3/ipv4-global-routing-helper.h"
-#include "ns3/traffic-control-module.h"
 #include <vector>
-//#include "ns3/gtk-config-store.h"
 
 using namespace ns3;
 using namespace std;
@@ -55,13 +41,14 @@ using namespace std;
 int
 main (int argc, char *argv[])
 {
+  RngSeedManager::SetSeed(42);
   double simTime = 4.0;
   double distance = 1000.0;
-  Time interPacketInterval = MilliSeconds (100);
+  Time interPacketInterval = MilliSeconds (10);
   uint16_t numCenterUes = 1;
   uint16_t numEdgeUes = 1;
   uint16_t numRandomUes = 1;
-  std::string algo = "NoOp";
+  string algo = "NoOp";
 
   // Command line arguments
   CommandLine cmd (__FILE__);
@@ -71,6 +58,7 @@ main (int argc, char *argv[])
   cmd.AddValue ("simTime", "Total duration of the simulation", simTime);
   cmd.AddValue ("distance", "Distance between eNBs [m]", distance);
   cmd.AddValue ("interPacketInterval", "Inter packet interval", interPacketInterval);
+  cmd.AddValue ("algo", "Algorithim", algo);
   cmd.Parse (argc, argv);
 
   ConfigStore inputConfig;
@@ -150,8 +138,8 @@ main (int argc, char *argv[])
   
   Ptr<ListPositionAllocator> enbPositionAlloc = CreateObject<ListPositionAllocator> ();
   enbPositionAlloc->Add (Vector (0.0, 0.0, 0.0));                       // eNB1
-  enbPositionAlloc->Add (Vector (distance,  0.0, 0.0));                 // eNB2
-  enbPositionAlloc->Add (Vector (distance * 0.5, distance * 0.866, 0.0));   // eNB3
+  enbPositionAlloc->Add (Vector (distance, 0.0, 0.0));                 // eNB2
+  enbPositionAlloc->Add (Vector (distance * 0.5, -distance * 0.866, 0.0));   // eNB3
   
   mobility.SetPositionAllocator (enbPositionAlloc);
   mobility.Install (enbNodes);
@@ -165,7 +153,7 @@ main (int argc, char *argv[])
       centerUePositionAlloc->Add (Vector (distance, 0.0, 0.0));                         // centerUE2
     }
     for (int i = 0; i < numCenterUes; i++) {
-      centerUePositionAlloc->Add (Vector (distance * 0.5, distance * 0.866, 0.0));      // centerUE3
+      centerUePositionAlloc->Add (Vector (distance * 0.5, -distance * 0.866, 0.0));      // centerUE3
     }
     mobility.SetPositionAllocator (centerUePositionAlloc);
     mobility.Install (centerUeNodes);
@@ -181,26 +169,49 @@ main (int argc, char *argv[])
     mobility.SetPositionAllocator (edgeUePositionAlloc);
     mobility.Install (edgeUeNodes);
   }
- 
+
   if (randomUeNodes.GetN() > 0) {
+    ObjectFactory pos;
+    pos.SetTypeId ("ns3::RandomRectanglePositionAllocator");
+    double minSpeed = 4.0;
+    double maxSpeed = 6.0;
+    double pause = 1.0;
+    ostringstream speedUniformRandomVariableStream;
+    speedUniformRandomVariableStream << "ns3::UniformRandomVariable[Min="
+                                  << minSpeed
+                                  << "|"
+                                  << "Max="
+                                  << maxSpeed
+                                  << "]";
+    ostringstream pauseConstantVariableStream;
+    pauseConstantVariableStream << "ns3::ConstantRandomVariable[Constant="
+                                  << pause
+                                    << "]"; 
     for (int i = 0; i < 3; ++i) {
       Box macroUeBox = bounds[i];
-      Ptr<RandomBoxPositionAllocator> randomUePositionAlloc = CreateObject<RandomBoxPositionAllocator> ();
-      Ptr<UniformRandomVariable> xVal = CreateObject<UniformRandomVariable> ();
-      xVal->SetAttribute ("Min", DoubleValue (macroUeBox.xMin));
-      xVal->SetAttribute ("Max", DoubleValue (macroUeBox.xMax));
-      randomUePositionAlloc->SetAttribute ("X", PointerValue (xVal));
-      Ptr<UniformRandomVariable> yVal = CreateObject<UniformRandomVariable> ();
-      yVal->SetAttribute ("Min", DoubleValue (macroUeBox.yMin));
-      yVal->SetAttribute ("Max", DoubleValue (macroUeBox.yMax));
-      randomUePositionAlloc->SetAttribute ("Y", PointerValue (yVal));
-      Ptr<UniformRandomVariable> zVal = CreateObject<UniformRandomVariable> ();
-      zVal->SetAttribute ("Min", DoubleValue (macroUeBox.zMin));
-      zVal->SetAttribute ("Max", DoubleValue (macroUeBox.zMax));
-      randomUePositionAlloc->SetAttribute ("Z", PointerValue (zVal));
-
+      ostringstream xUniformRandomVariableStream;
+      xUniformRandomVariableStream << "ns3::UniformRandomVariable[Min="
+                                    << macroUeBox.xMin
+                                    << "|"
+                                    << "Max="
+                                    << macroUeBox.xMax
+                                    << "]";
+      ostringstream yUniformRandomVariableStream;
+      yUniformRandomVariableStream << "ns3::UniformRandomVariable[Min="
+                                    << macroUeBox.yMin
+                                    << "|"
+                                    << "Max="
+                                    << macroUeBox.yMax
+                                    << "]";
+     
+      pos.Set ("X", StringValue (xUniformRandomVariableStream.str()));
+      pos.Set ("Y", StringValue (yUniformRandomVariableStream.str()));
+      Ptr <PositionAllocator> taPositionAlloc = pos.Create ()->GetObject <PositionAllocator> ();
       mobility.SetMobilityModel ("ns3::RandomWaypointMobilityModel",
-                                  "PositionAllocator", PointerValue (randomUePositionAlloc));    
+                                "Speed", StringValue (speedUniformRandomVariableStream.str ()),
+                                "Pause", StringValue (pauseConstantVariableStream.str ()),
+                                "PositionAllocator", PointerValue (taPositionAlloc));
+
       for (int j = 0; j < numRandomUes; j++) {
         mobility.Install (randomUeNodes.Get(i * numRandomUes + j));
       }
@@ -211,6 +222,86 @@ main (int argc, char *argv[])
   // Install the IP stack on the UEs
   // Assign IP address to UEs
   NetDeviceContainer enbLteDevs;
+  if(algo == "NoOp")
+  {
+    lteHelper->SetFfrAlgorithmType ("ns3::LteFrNoOpAlgorithm");
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+    enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
+
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+    enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
+
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+    enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
+
+    //FR algorithm reconfiguration if needed
+    PointerValue tmp;
+    enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+    Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+    ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+
+  } else if (algo == "Hard") {
+    lteHelper->SetFfrAlgorithmType ("ns3::LteFrHardAlgorithm");
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandwidth", UintegerValue (8));
+
+    //for the fist cell**
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (0));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(0)));//for the second cell lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (8));
+    
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (8));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(1)));//for the third cell** lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (16));
+    
+    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (16));
+    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(2)));
+
+      //FR algorithm reconfiguration if needed
+    PointerValue tmp;
+    enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+    Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+    ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+  
+  } else {
+     lteHelper->SetFfrAlgorithmType ("ns3::LteFrStrictAlgorithm");
+            
+      //ns3::LteFrStrictAlgorithm works with Absolute Mode Uplink Power Control
+      Config::SetDefault ("ns3::LteUePowerControl::AccumulationEnabled", BooleanValue (false));
+ 
+      lteHelper->SetFfrAlgorithmAttribute ("RsrqThreshold", UintegerValue (32));
+      //lteHelper->SetFfrAlgorithmAttribute ("CenterPowerOffset",
+      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB_6));
+      //lteHelper->SetFfrAlgorithmAttribute ("EdgePowerOffset",
+      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB3));
+      //lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (0));
+      //lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (3));
+      lteHelper->SetFfrAlgorithmAttribute ("UlCommonSubBandwidth", UintegerValue (12));
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandwidth", UintegerValue (4));
+      lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (1));
+      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (2));
+
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (12));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
+
+      //node 2
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (16));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
+
+      //node 3
+      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (20));
+      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
+      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
+
+      //FR algorithm reconfiguration if needed
+      PointerValue tmp;
+      enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
+      Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
+      ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
+  }
+
   NetDeviceContainer centerUeLteDevs, edgeUeLteDevs, randomUeLteDevs;
   if (centerUeNodes.GetN() > 0) {
     centerUeLteDevs = lteHelper->InstallUeDevice (centerUeNodes);
@@ -256,123 +347,20 @@ main (int argc, char *argv[])
     ueStaticRouting->SetDefaultRoute (epcHelper->GetUeDefaultGatewayAddress (), 1);
   }
 
-   if(algo == "NoOp")
-  {
-    lteHelper->SetFfrAlgorithmType ("ns3::LteFrNoOpAlgorithm");
-
-    
-  lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
-  enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
-
-  lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
-  enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
-
-  lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
-  enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
-
-  //FR algorithm reconfiguration if needed
-  PointerValue tmp;
-  enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
-  Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
-  ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
-
-  }
-  else if (algo == "Hard")
-  {
-    lteHelper->SetFfrAlgorithmType ("ns3::LteFrHardAlgorithm");
-    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandwidth", UintegerValue (8));
-
-    //for the fist cell**
-    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (0));
-    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
-    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(0)));//for the second cell lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (8));
-    
-    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (8));
-    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
-    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(1)));//for the third cell** lteHelper->SetFfrAlgorithmAttribute ("DlSubBandOffset", UintegerValue (16));
-    
-    lteHelper->SetFfrAlgorithmAttribute ("UlSubBandOffset", UintegerValue (16));
-    lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
-    enbLteDevs.Add(lteHelper->InstallEnbDevice (enbNodes.Get(2)));
-
-      //FR algorithm reconfiguration if needed
-    PointerValue tmp;
-    enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
-    Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
-    ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
-  }
-  else
-  {
-     lteHelper->SetFfrAlgorithmType ("ns3::LteFrStrictAlgorithm");
-            
-      //ns3::LteFrStrictAlgorithm works with Absolute Mode Uplink Power Control
-      Config::SetDefault ("ns3::LteUePowerControl::AccumulationEnabled", BooleanValue (false));
- 
-      lteHelper->SetFfrAlgorithmAttribute ("RsrqThreshold", UintegerValue (32));
-      //lteHelper->SetFfrAlgorithmAttribute ("CenterPowerOffset",
-      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB_6));
-      //lteHelper->SetFfrAlgorithmAttribute ("EdgePowerOffset",
-      //                                     UintegerValue (LteRrcSap::PdschConfigDedicated::dB3));
-      //lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (0));
-      //lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (3));
-      lteHelper->SetFfrAlgorithmAttribute ("UlCommonSubBandwidth", UintegerValue (6));
-      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandwidth", UintegerValue (6));
-      lteHelper->SetFfrAlgorithmAttribute ("CenterAreaTpc", UintegerValue (1));
-      lteHelper->SetFfrAlgorithmAttribute ("EdgeAreaTpc", UintegerValue (2));
-
-      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (6));
-      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (1));
-      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (0)));
-
-      //node 2
-      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (12));
-      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (2));
-      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (1)));
-
-      //node 3
-      lteHelper->SetFfrAlgorithmAttribute ("UlEdgeSubBandOffset", UintegerValue (18));
-      lteHelper->SetFfrAlgorithmAttribute ("FrCellTypeId", UintegerValue (3));
-      enbLteDevs.Add (lteHelper->InstallEnbDevice (enbNodes.Get (2)));
-
-      //FR algorithm reconfiguration if needed
-      PointerValue tmp;
-      enbLteDevs.Get (0)->GetAttribute ("LteFfrAlgorithm", tmp);
-      Ptr<LteFfrAlgorithm> ffrAlgorithm = DynamicCast<LteFfrAlgorithm> (tmp.GetObject ());
-      ffrAlgorithm->SetAttribute ("FrCellTypeId", UintegerValue (1));
-    }
-  cout << "b4\n";
-  Ptr<ns3::NetDevice> n1 = centerUeLteDevs.Get(0);
-  Ptr<ns3::NetDevice> n2 = enbLteDevs.Get(0);
-  if (n1 == 0)
-    cout << "null 1";
-  if (n2 == 0)
-    cout << "null 2";
-  cout << "eek";
-  lteHelper->Attach (centerUeLteDevs.Get(0), enbLteDevs.Get(0));
-  cout << "2";
   // Attach UEs to eNodeBs
   for (uint16_t i = 0; i < 3; i++) {
-    cout << "\n";
     for (uint16_t j = 0; j < numCenterUes; j++) {
-      cout << i * numCenterUes + j << "\n";
       lteHelper->Attach (centerUeLteDevs.Get(i * numCenterUes + j), enbLteDevs.Get(i));
     }
-                cout << "555" << "\n";
-
     for (uint16_t j = 0; j < numEdgeUes; j++) {
-            cout << j << "\n";
-
       lteHelper->Attach (edgeUeLteDevs.Get(i * numEdgeUes + j), enbLteDevs.Get(i));
     }
     for (uint16_t j = 0; j < numRandomUes; j++) {
-            cout << j << "\n";
-
       lteHelper->Attach (randomUeLteDevs.Get(i * numRandomUes + j), enbLteDevs.Get(i));
     }
     // side effect: the default EPS bearer will be activated
   }
 
-  cout << "here\n";
   // Install and start applications on UEs and remote host
   uint16_t ulPort = 2000;
   ApplicationContainer clientApps;
@@ -384,7 +372,6 @@ main (int argc, char *argv[])
     
     //add apps for center ues
     for (int j = 0; j < numCenterUes; ++j) {
-      cout << "hi1\n";
       ++ulPort;
       PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
       serverCenterApps.Add (ulPacketSinkHelper.Install (remoteHost));
@@ -397,7 +384,6 @@ main (int argc, char *argv[])
 
     //add apps for edge ues
     for (int j = 0; j < numEdgeUes; ++j) {
-      cout << "hi2\n";
       ++ulPort;
       PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
       serverEdgeApps.Add (ulPacketSinkHelper.Install (remoteHost));
@@ -410,7 +396,6 @@ main (int argc, char *argv[])
 
     //add apps for random ues
     for (int j = 0; j < numRandomUes; ++j) {
-      cout << "hi3\n";
       ++ulPort;
       PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), ulPort));
       serverRandomApps.Add (ulPacketSinkHelper.Install (remoteHost));
@@ -443,50 +428,50 @@ main (int argc, char *argv[])
   Simulator::Destroy ();
 
   // calculate goodputs
-  uint64_t total_sum = 0;
+  double total_sum = 0;
 
   for (int i = 0; i < 3; i++) {
-    uint64_t pair_sum = 0;
-    uint64_t center_sum = 0;
-    uint64_t edge_sum = 0;
-    uint64_t random_sum = 0;
+    double pair_sum = 0;
+    double center_sum = 0;
+    double edge_sum = 0;
+    double random_sum = 0;
 
     cout << "EnB " << i << "\n\n";
 
     // center ue goodputs
     for (int j = 0; j < numCenterUes; ++j) {
-      uint64_t center = DynamicCast<PacketSink> (serverCenterApps.Get(i * numCenterUes + j))->GetTotalRx ();
+      double center = DynamicCast<PacketSink> (serverCenterApps.Get(i * numCenterUes + j))->GetTotalRx ();
       double center_goodput = center * 8 / (simTime - .5);
-      cout << "Center " << j << " Goodput: " << center_goodput << "\n";
+      cout << "Center Flow " << j << " Goodput: " << center_goodput/1000000 << " Mbps\n";
       center_sum += center_goodput;
     }
-    cout << "Sum Center Goodput: " << center_sum << "\n\n";
+    cout << "Sum Center Goodput: " << center_sum/1000000 << " Mbps\n\n";
     pair_sum += center_sum;
 
     // edge ue goodputs
     for (int j = 0; j < numEdgeUes; ++j) {
-      uint64_t edge = DynamicCast<PacketSink> (serverEdgeApps.Get(i * numEdgeUes + j))->GetTotalRx ();
+      double edge = DynamicCast<PacketSink> (serverEdgeApps.Get(i * numEdgeUes + j))->GetTotalRx ();
       double edge_goodput = edge * 8 / (simTime - .5);
-      cout << "Edge " << j << " Goodput: " << edge_goodput << "\n";
+      cout << "Edge Flow " << j << " Goodput: " << edge_goodput/1000000 << " Mbps\n";
       edge_sum += edge_goodput;
     }
-    cout << "Sum Edge Goodput: " << edge_sum << "\n\n";
+    cout << "Sum Edge Goodput: " << edge_sum/1000000 << " Mbps\n\n";
     pair_sum += edge_sum;
 
     // random ue goodputs
     for (int j = 0; j < numRandomUes; ++j) {
-      uint64_t random = DynamicCast<PacketSink> (serverRandomApps.Get(i * numRandomUes + j))->GetTotalRx ();
+      double random = DynamicCast<PacketSink> (serverRandomApps.Get(i * numRandomUes + j))->GetTotalRx ();
       double random_goodput = random * 8 / (simTime - .5);
-      cout << "Random " << j << " Goodput: " << random_goodput << "\n";
+      cout << "Random Flow " << j << " Goodput: " << random_goodput/1000000 << " Mbps\n";
       random_sum += random_goodput;
     }
-    cout << "Sum Random Goodput: " << random_sum << "\n\n";
+    cout << "Sum Random Goodput: " << random_sum/1000000 << " Mbps\n\n";
     pair_sum += random_sum;
 
-    cout << "EnB " << i << " Goodput: " << pair_sum << "\n\n";
+    cout << "EnB " << i << " Goodput: " << pair_sum/1000000 << " Mbps\n\n";
     total_sum += pair_sum;
   }
-  cout << "Total Goodput " << total_sum << "\n";
+  cout << "Total Goodput " << total_sum/1000000 << " Mbps\n";
 
   return 0;
 }
